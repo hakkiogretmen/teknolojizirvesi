@@ -1,0 +1,54 @@
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: {{ .Values.namespace }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: comparex-svc
+  namespace: {{ .Values.namespace }}
+  labels: 
+    name: comparex-svc
+spec: 
+  type: LoadBalancer
+  ports:
+  - name: http
+    port: 3000
+    targetPort: 3000
+  selector:
+    name: comparex-app
+---
+apiVersion: extensions/v1beta1
+kind: Deployment
+metadata: 
+  name: comparex-deploy
+  namespace: {{ .Values.namespace }}
+  labels: 
+    name: comparex-app
+spec: 
+  replicas: 1
+  strategy: 
+    rollingUpdate: 
+      maxSurge: 1
+      maxUnavaliable: 1
+    type: RollingUpdate
+  template: 
+    metadata:
+      labels: 
+        name: comparex-app
+    spec:
+      imagePullSecrets:
+        - name: acr-secret
+      containers:
+      - image: techsummitacr.azurecr.io/techsummit:{{ .Values.image.tag }}
+        name: techsummit-container
+        env:
+        - name: environment
+          value: {{ .Values.environment }}
+        ports:
+        - containerPort: 3000
+          name: comparex-app
+        imagePullPolicy: Always
+      restartPolicy: Always

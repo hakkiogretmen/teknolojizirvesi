@@ -1,0 +1,9 @@
+FROM techsummit
+
+COPY test test
+
+ENV NODE_ENV dev
+
+RUN npm update && npm install -g mocha
+
+CMD ["mocha", "test/test.js", "--reporter", "spec","--exit"]

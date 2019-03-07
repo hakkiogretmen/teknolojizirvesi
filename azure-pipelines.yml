@@ -1,0 +1,66 @@
+variables:
+- group: tech-summit-variables
+- name: baseImageName
+  value: techsummit
+
+trigger:
+- master
+
+pool:
+  vmImage: 'Ubuntu-16.04'
+  
+steps:
+- script: sudo npm update && sudo npm install -g mocha && sudo npm install -g mocha-junit-reporter && sudo npm install -g chai && sudo npm install -g nyc
+  displayName: "install npm modules"
+
+- script: |
+    sudo nyc --reporter cobertura --reporter html mocha test/test.js --reporter mocha-junit-reporter --reporter-options mochaFile=TEST-RESULTS.xml --exit
+    sudo chmod 777 . -R
+  displayName: "Run Unit Tests inside the Microsoft-Hosted agent"
+
+- script: |
+    docker build -t $(baseImageName) --build-arg VERSION=$(Build.BuildId) -f Dockerfile.prod .
+    docker build -t $(baseImageName)-test -f Dockerfile.test .
+  displayName: "Build Docker Images"
+
+- script: |
+    docker run --rm --name $(baseImageName)-test $(baseImageName)-test
+  displayName: "Run Unit Tests inside the Container"
+
+# Publish Test Results to Azure Pipelines/TFS 
+- task: PublishTestResults@2
+  condition: succeededOrFailed()
+  inputs:
+    testResultsFormat: 'JUnit'
+    testResultsFiles: 'TEST-RESULTS.xml'
+
+- task: PublishCodeCoverageResults@1
+  inputs: 
+    codeCoverageTool: Cobertura
+    summaryFileLocation: '$(System.DefaultWorkingDirectory)/**/*coverage.xml'
+    reportDirectory: '$(System.DefaultWorkingDirectory)/**/coverage'
+
+- script: |
+    docker tag $(baseImageName) $(acrId).azurecr.io/$(baseImageName):latest
+    docker tag $(baseImageName) $(acrId).azurecr.io/$(baseImageName):$(Build.BuildId)
+  displayName: "Tag Prod Docker Image"
+
+- script: |
+    docker image ls
+    docker login -u $(acrId) -p $(acrPassword) $(acrId).azurecr.io
+    docker push $(acrId).azurecr.io/$(baseImageName):latest
+    docker push $(acrId).azurecr.io/$(baseImageName):$(Build.BuildId)
+  displayName: "Push Docker Images To ACR"
+
+- task: CopyFiles@2
+  inputs:
+    SourceFolder: '$(System.DefaultWorkingDirectory)'
+    Contents: |
+      kubernetes/*
+      kubernetes/**/*
+      kubernetes/**/**/*
+      terraform/*
+      test/techjmeter.jmx
+    TargetFolder: '$(Build.ArtifactStagingDirectory)'
+
+- task: PublishBuildArtifacts@1
